@@ -27,43 +27,165 @@ class AlunniController
     }
   }
 
-  public function create(Request $request, Response $response, $args){
-    $data = $request->getParsedBody();
-    $nome = $data['nome'];
-    $cognome = $data['cognome'];
-    $mysqli_connection = new MySQLi('my_mariadb', 'root', 'ciccio', 'scuola');
-    $result = $mysqli_connection->query("INSERT INTO alunni (nome, cognome) VALUES ('$nome', '$cognome')");
-    
-    if($result){
-      return $response->withHeader("Content-type", "application/json")->withStatus(201);
-    } else {
-      return $response->withHeader("Content-type", "application/json")->withStatus(500);
+
+    public function create(Request $request, Response $response, $args){
+
+      $data = $request->getParsedBody();
+  
+ 
+      if (empty($data)) {
+        $raw = (string)$request->getBody();
+        $decoded = json_decode($raw, true);
+        if (json_last_error() === JSON_ERROR_NONE) {
+          $data = $decoded;
+        } else {
+          $response->getBody()->write(json_encode(['error' => 'Invalid JSON']));
+          return $response->withHeader('Content-type', 'application/json')->withStatus(400);
+        }
+      }
+  
+      $nome = isset($data['nome']) ? $data['nome'] : '';
+      $cognome = isset($data['cognome']) ? $data['cognome'] : '';
+  
+      $mysqli_connection = new MySQLi('my_mariadb', 'root', 'ciccio', 'scuola');
+  
+
+      $stmt = $mysqli_connection->prepare("INSERT INTO alunni (nome, cognome) VALUES (?, ?)");
+      $stmt->bind_param('ss', $nome, $cognome);
+      $result = $stmt->execute();
+  
+      if($result){
+        $insertId = $stmt->insert_id;
+        $stmt->close();
+        $mysqli_connection->close();
+        $response->getBody()->write(json_encode(['id' => $insertId, 'nome' => $nome, 'cognome' => $cognome]));
+        return $response->withHeader("Content-type", "application/json")->withStatus(201);
+      } else {
+        $err = $mysqli_connection->error;
+        $stmt->close();
+        $mysqli_connection->close();
+        $response->getBody()->write(json_encode(['error' => $err]));
+        return $response->withHeader("Content-type", "application/json")->withStatus(500);
+      }
     }
-  }
+
 
   public function update(Request $request, Response $response, $args){
-    $id = $args['id'];
+    $id = isset($args['id']) ? (int)$args['id'] : 0;
+    if ($id <= 0) {
+      $response->getBody()->write(json_encode(['error' => 'Invalid id']));
+      return $response->withHeader("Content-type", "application/json")->withStatus(400);
+    }
+
     $data = $request->getParsedBody();
-    $nome = $data['nome'];
-    $cognome = $data['cognome'];
+    if (empty($data)) {
+      $raw = (string)$request->getBody();
+      $decoded = json_decode($raw, true);
+      if (json_last_error() === JSON_ERROR_NONE) {
+        $data = $decoded;
+      } else {
+        $response->getBody()->write(json_encode(['error' => 'Invalid JSON']));
+        return $response->withHeader('Content-type', 'application/json')->withStatus(400);
+      }
+    }
+
+    $fields = [];
+    $params = [];
+    $types = '';
+
+    if (isset($data['nome'])) {
+      $fields[] = 'nome = ?';
+      $params[] = $data['nome'];
+      $types .= 's';
+    }
+    if (isset($data['cognome'])) {
+      $fields[] = 'cognome = ?';
+      $params[] = $data['cognome'];
+      $types .= 's';
+    }
+
+    if (empty($fields)) {
+      $response->getBody()->write(json_encode(['error' => 'No fields to update']));
+      return $response->withHeader("Content-type", "application/json")->withStatus(400);
+    }
+
     $mysqli_connection = new MySQLi('my_mariadb', 'root', 'ciccio', 'scuola');
-    $result = $mysqli_connection->query("UPDATE alunni SET nome='$nome', cognome='$cognome' WHERE id=$id");
-    
-    if($result){
-      return $response->withHeader("Content-type", "application/json")->withStatus(200);
+
+    $sql = "UPDATE alunni SET " . implode(', ', $fields) . " WHERE id = ?";
+    $types .= 'i';
+    $params[] = $id;
+
+    $stmt = $mysqli_connection->prepare($sql);
+    if (!$stmt) {
+      $err = $mysqli_connection->error;
+      $mysqli_connection->close();
+      $response->getBody()->write(json_encode(['error' => $err]));
+      return $response->withHeader("Content-type", "application/json")->withStatus(500);
+    }
+
+
+    $bind_names[] = $types;
+    for ($i = 0; $i < count($params); $i++) {
+      $bind_names[] = & $params[$i];
+    }
+    call_user_func_array([$stmt, 'bind_param'], $bind_names);
+
+    $exec = $stmt->execute();
+    if ($exec) {
+      $affected = $stmt->affected_rows;
+      $stmt->close();
+      $mysqli_connection->close();
+      if ($affected > 0) {
+        $response->getBody()->write(json_encode(['message' => 'Updated', 'id' => $id]));
+        return $response->withHeader("Content-type", "application/json")->withStatus(200);
+      } else {
+
+        $response->getBody()->write(json_encode(['message' => 'No changes made or id not found']));
+        return $response->withHeader("Content-type", "application/json")->withStatus(200);
+      }
     } else {
+      $err = $stmt->error ?: $mysqli_connection->error;
+      $stmt->close();
+      $mysqli_connection->close();
+      $response->getBody()->write(json_encode(['error' => $err]));
       return $response->withHeader("Content-type", "application/json")->withStatus(500);
     }
   }
 
   public function destroy(Request $request, Response $response, $args){
-    $id = $args['id'];
+    $id = isset($args['id']) ? (int)$args['id'] : 0;
+    if ($id <= 0) {
+      $response->getBody()->write(json_encode(['error' => 'Invalid id']));
+      return $response->withHeader("Content-type", "application/json")->withStatus(400);
+    }
+
     $mysqli_connection = new MySQLi('my_mariadb', 'root', 'ciccio', 'scuola');
-    $result = $mysqli_connection->query("DELETE FROM alunni WHERE id=$id");
-    
-    if($result){
-      return $response->withHeader("Content-type", "application/json")->withStatus(200);
+    $stmt = $mysqli_connection->prepare("DELETE FROM alunni WHERE id = ?");
+    if (!$stmt) {
+      $err = $mysqli_connection->error;
+      $mysqli_connection->close();
+      $response->getBody()->write(json_encode(['error' => $err]));
+      return $response->withHeader("Content-type", "application/json")->withStatus(500);
+    }
+
+    $stmt->bind_param('i', $id);
+    $exec = $stmt->execute();
+    if ($exec) {
+      $affected = $stmt->affected_rows;
+      $stmt->close();
+      $mysqli_connection->close();
+      if ($affected > 0) {
+        $response->getBody()->write(json_encode(['message' => 'Deleted', 'id' => $id]));
+        return $response->withHeader("Content-type", "application/json")->withStatus(200);
+      } else {
+        $response->getBody()->write(json_encode(['error' => 'Not found']));
+        return $response->withHeader("Content-type", "application/json")->withStatus(404);
+      }
     } else {
+      $err = $stmt->error ?: $mysqli_connection->error;
+      $stmt->close();
+      $mysqli_connection->close();
+      $response->getBody()->write(json_encode(['error' => $err]));
       return $response->withHeader("Content-type", "application/json")->withStatus(500);
     }
   }
