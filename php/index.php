@@ -15,6 +15,11 @@ $app->post('/alunni', 'AlunniController:create');
 $app->put('/alunni/{id}', 'AlunniController:update');
 $app->delete('/alunni/{id}', 'AlunniController:destroy');
                    
+$app->get('/certificazione', 'CertificazioniController:index');
+$app->get('/certificazione/{id}', 'CertificazioniController:show');
+$app->post('/certificazione', 'CertificazioniController:create');
+$app->put('/certificazione/{id}', 'CertificazioniController:update');
+$app->delete('/certificazione/{id}', 'CertificazioniController:destroy');
 
 $app->get('/hello/{name}', function (Request $request, Response $response, array $args) {
     $name = $args['name'];
